@@ -4,4 +4,5 @@ pandas>=2.0.0
 numpy>=1.24.0
 plotly>=5.18.0
 pytz>=2024.1
-ta>=0.11.0 
+ta>=0.11.0
+tzdata>=2024.1 

@@ -326,7 +326,9 @@ def process_data(data: pd.DataFrame) -> pd.DataFrame:
     """
     if data.index.tzinfo is None:
         data.index = data.index.tz_localize('UTC')
-    data.index = data.index.tz_convert('US/Eastern')
+    # Use pytz for reliable timezone conversion
+    eastern = pytz.timezone('US/Eastern')
+    data.index = data.index.tz_convert(eastern)
     data.reset_index(inplace=True)
     data.rename(columns={'Date': 'Datetime'}, inplace=True)
     return data
