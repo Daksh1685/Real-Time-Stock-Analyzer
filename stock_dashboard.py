@@ -12,6 +12,7 @@ import json
 import requests
 import io
 import re
+import time
 
 # Set page config
 st.set_page_config(
@@ -220,10 +221,10 @@ def search_stocks(search_term: str, stocks_dict: Dict[str, str]) -> Dict[str, st
     return results
 
 # Cache the stock data to improve performance
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)  # Cache for 1 hour to avoid rate limiting
 def fetch_stock_data(ticker: str, period: str, interval: str) -> Optional[pd.DataFrame]:
     """
-    Fetch stock data from Yahoo Finance with error handling and caching.
+    Fetch stock data from Yahoo Finance with error handling, caching, and retry logic.
     
     Args:
         ticker: Stock symbol
@@ -233,33 +234,59 @@ def fetch_stock_data(ticker: str, period: str, interval: str) -> Optional[pd.Dat
     Returns:
         DataFrame with stock data or None if error occurs
     """
-    try:
-        stock = yf.Ticker(ticker)
-        data = stock.history(period=period, interval=interval)
-        
-        if data.empty:
-            st.error(f"No data found for {ticker}. Please check the ticker symbol and try again.")
-            return None
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            stock = yf.Ticker(ticker)
+            data = stock.history(period=period, interval=interval)
             
-        return data
-    except Exception as e:
-        st.error(f"Error fetching data for {ticker}: {str(e)}")
-        return None
+            if data.empty:
+                st.error(f"No data found for {ticker}. Please check the ticker symbol and try again.")
+                return None
+                
+            return data
+        except Exception as e:
+            error_msg = str(e)
+            if "Too Many Requests" in error_msg or "429" in error_msg or "Rate" in error_msg:
+                if attempt < max_retries - 1:
+                    # Add delay before retry
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    st.error(f"⚠️ Server is busy. Please try again in a few moments. (Rate limited)")
+                    return None
+            else:
+                st.error(f"Error fetching data for {ticker}: {error_msg}")
+                return None
+    
+    return None
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=86400)  # Cache for 24 hours
 def get_usd_to_inr_rate() -> float:
     """
-    Get the current USD to INR conversion rate.
+    Get the current USD to INR conversion rate with retry logic.
     
     Returns:
         Current USD to INR rate
     """
-    try:
-        usd_inr = yf.Ticker("USDINR=X")
-        rate = usd_inr.history(period="1d")['Close'].iloc[-1]
-        return rate
-    except:
-        return 83.0  # Fallback rate if API fails
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            usd_inr = yf.Ticker("USDINR=X")
+            rate = usd_inr.history(period="1d")['Close'].iloc[-1]
+            return rate
+        except Exception as e:
+            if "Too Many Requests" in str(e) or "429" in str(e):
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+            return 83.0  # Fallback rate if API fails
+    
+    return 83.0  # Fallback rate if API fails
 
 def is_indian_stock(ticker: str) -> bool:
     """
